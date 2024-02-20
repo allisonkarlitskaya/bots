@@ -73,7 +73,6 @@ def test_repo(repository: str, revision: str | None, rebase: str | None) -> None
     else:
         git('log', '-n1')
 
-
     for cmd in ('.cockpit-ci/run', 'test/run'):
         try:
             log('\n+', shlex.quote(cmd))
@@ -93,6 +92,9 @@ def main() -> None:
     parser.add_argument('revision', nargs='?', help='The revision to test')
     parser.add_argument('rebase', nargs='?', help='Target branch to rebase onto')
     args = parser.parse_args()
+
+    # All output to stdout — otherwise podman reorders things
+    os.dup2(1, 2)
 
     test_repo(args.repository, args.revision, args.rebase)
 
