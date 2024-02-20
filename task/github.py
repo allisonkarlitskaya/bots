@@ -107,9 +107,9 @@ def get_repo():
     return res.decode('utf-8').strip() or None
 
 
-def get_origin_repo():
+def get_origin_repo(remote: str = 'origin') -> str | None:
     try:
-        res = subprocess.check_output(["git", "remote", "get-url", "origin"])
+        res = subprocess.check_output(["git", "remote", "get-url", remote])
     except subprocess.CalledProcessError:
         return None
     url = res.decode('utf-8').strip()
