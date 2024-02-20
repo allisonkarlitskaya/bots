@@ -24,6 +24,7 @@ import os
 import platform
 import sys
 import tempfile
+import textwrap
 import traceback
 from pathlib import Path
 from typing import (
@@ -45,6 +46,7 @@ from lib.aio.httpqueue import HttpQueue
 from lib.aio.jsonutil import (
     JsonError,
     JsonObject,
+    get_bool,
     get_int,
     get_nested,
     get_str,
@@ -86,6 +88,7 @@ class Job:
         # reporting
         self.slug = get_str_or_none(obj, 'slug', None)
         self.title = get_str_or_none(obj, 'title', None)
+        self.report = get_bool(obj, 'report', False)
 
         # to run
         self.container = get_str_or_none(obj, 'container', None)
@@ -343,6 +346,18 @@ async def run_job(job: Job, ctx: JobContext) -> None:
             log.write(f'\n*** Failure: {exc}\n'.encode())
             await status.post('failure', str(exc))
 
+            if job.report:
+                issue = {
+                    "title": f"{job.context} failed",
+                    "body": textwrap.dedent(f"""
+                        The job {job.context} failed on commit {job.sha}.
+
+                        Log: {destination.location}log.html
+                    """).lstrip(),
+                    "labels": ["nightly"]
+                }
+                await ctx.github.post(f'repos/{job.repo}/issues', issue)
+
         except asyncio.CancelledError:
             await status.post('failure', f'Cancelled [{platform.node()}]')
             log.write('*** Job cancelled\n'.encode())
@@ -393,7 +408,9 @@ async def main() -> None:
     run_parser.add_argument('--repo', required=True, help="The repository (like `cockpit-project/cockpit`)")
     run_parser.add_argument('--sha', required=True, help="The revision sha, exactly 40 hex digits")
     run_parser.add_argument('--context', required=True, help="The status we're reporting against the sha")
-    run_parser.add_argument('--target', help="The target branch")
+    group = run_parser.add_mutually_exclusive_group()
+    group.add_argument('--target', help="The target branch")
+    group.add_argument('--report', action='store_true', help="Open an issue on failures")
     run_parser.add_argument('--slug', help="The URL slug (used for logging)")
     run_parser.add_argument('--title', help="The title for the log page")
     run_parser.add_argument('--container', help="The container image to use (like `quay.io/cockpit/tasks:latest`)")

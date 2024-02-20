@@ -65,6 +65,10 @@ def _get(obj: JsonObject, cast: Callable[[JsonValue], T], key: str, default: DT 
         raise JsonError(obj, f"{target} {exc!s}") from exc
 
 
+def get_bool(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | bool:
+    return _get(obj, lambda v: typechecked(v, bool), key, default)
+
+
 def get_int(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | int:
     return _get(obj, lambda v: typechecked(v, int), key, default)
 
