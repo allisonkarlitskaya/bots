@@ -81,9 +81,11 @@ class Config:
         assert isinstance(value, list) and all(isinstance(item, str) for item in value)
         return tuple(value)
 
-    def __init__(self) -> None:
-        config = xdg_config_home('cockpit-dev/job-runner.toml', envvar='JOB_RUNNER_CONFIG')
-        with open(config, 'rb') as file:
+    def __init__(self, config_file: str | None) -> None:
+        if config_file is None:
+            config_file = xdg_config_home('cockpit-dev/job-runner.toml', envvar='JOB_RUNNER_CONFIG')
+
+        with open(config_file, 'rb') as file:
             self._config = tomllib.load(file)
 
 
@@ -334,24 +336,36 @@ class KeyValueAction(argparse.Action):
 
 
 async def main() -> None:
-    # cockpit-project/cockpit-navigator 25c2df09f9b7058fd09854098f5e2b66c98bc59c fedora-39
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('repo', help="The repository (like `cockpit-project/cockpit`)")
-    parser.add_argument('sha', help="The revision sha, exactly 40 hex digits")
-    parser.add_argument('context', help="The status we're reporting against the sha")
-    parser.add_argument('--target', help="The target branch")
-    parser.add_argument('--slug', help="The URL slug (used for logging)")
-    parser.add_argument('--title', help="The title for the log page")
-    parser.add_argument('--container', help="The container image to use (like `quay.io/cockpit/tasks:latest`)")
-    parser.add_argument('--env', help="Environment variables for the test run", action=KeyValueAction)
-    parser.add_argument('--timeout', help="Timeout of the job, in minutes")
+    parser.add_argument('--config-file', '-F', metavar='FILENAME',
+                        help="Config file [default JOB_RUNNER_CONFIG or ~/.config/cockpit-dev/job-runner.toml]")
+    subprograms = parser.add_subparsers(dest='cmd', required=True, title="Subcommands")
+
+    run_parser = subprograms.add_parser("run", help="Run a single job provided on the command line")
+    run_parser.add_argument('repo', help="The repository (like `cockpit-project/cockpit`)")
+    run_parser.add_argument('sha', help="The revision sha, exactly 40 hex digits")
+    run_parser.add_argument('context', help="The status we're reporting against the sha")
+    run_parser.add_argument('--target', help="The target branch")
+    run_parser.add_argument('--slug', help="The URL slug (used for logging)")
+    run_parser.add_argument('--title', help="The title for the log page")
+    run_parser.add_argument('--container', help="The container image to use (like `quay.io/cockpit/tasks:latest`)")
+    run_parser.add_argument('--env', help="Environment variables for the test run", action=KeyValueAction)
+    run_parser.add_argument('--timeout', help="Timeout of the job, in minutes")
+
+    run_parser = subprograms.add_parser("json", help="Run a single given as a JSON blob")
+    run_parser.add_argument('json', help="The job, in JSON format")
+
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG)
+    config = Config(args.config_file)
 
-    config = Config()
-    job = Job(**vars(args))
+    if args.cmd == 'run':
+        job = Job(**{field: getattr(args, field) for field in Job._fields})
+
+    elif args.cmd == 'json':
+        job = Job(**json.loads(args.json))
+
+    logging.basicConfig(level=logging.DEBUG)
 
     async with aiohttp.ClientSession() as session:
         ctx = JobContext(config, session)
