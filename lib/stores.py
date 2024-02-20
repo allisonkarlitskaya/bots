@@ -19,8 +19,7 @@ from lib.directories import xdg_config_home
 
 # hosted on public internet
 PUBLIC_STORES = [
-    "https://cockpit-images.eu-central-1.linodeobjects.com/",
-    "https://cockpit-images.us-east-1.linodeobjects.com/",
+    "https://lislogs.nl-ams-1.linodeobjects.com/",
 ]
 
 # hosted behind the Red Hat VPN
@@ -40,4 +39,4 @@ except FileNotFoundError:
     pass
 
 
-LOG_STORE = "https://cockpit-logs.us-east-1.linodeobjects.com/"
+LOG_STORE = "https://lislogs.nl-ams-1.linodeobjects.com/",

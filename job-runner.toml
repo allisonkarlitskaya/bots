@@ -1,0 +1,30 @@
+# Install to ~/.config/cockpit-dev/job-runner.toml
+
+[logs]
+driver='local'   # 's3' or 'local'
+
+[status]
+driver='local'  # 'github' or 'local'
+
+[github]
+api = 'https://api.github.com/'
+clone = 'https://github.com/'
+user-agent = 'Not Cockpit Tests'
+# token = 'ghp_XXX'
+
+[logs.s3]
+acl = 'public-read'
+# url = 'https://your-bucket/'
+# key = {access='XXX', secret='XXX'}
+
+[logs.local]
+# hint: python -m http.server -b 127.0.0.1 -d ~/.cache/cockpit-dev/job-runner-logs
+dir = '~/.cache/cockpit-dev/job-runner-logs'
+link = 'http://127.0.0.1:8000/'
+
+[container]
+command = 'podman'
+args = []
+run-args = ['--device=/dev/kvm']
+# secrets.github = '--secret=github-token'
+default-image = 'quay.io/cockpit/tasks:latest'
