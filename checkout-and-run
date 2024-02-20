@@ -8,6 +8,7 @@ import os
 import shlex
 import subprocess
 import sys
+from typing import Sequence
 
 
 def log(*parts: object) -> None:
@@ -43,7 +44,7 @@ def git_output(*cmd: str) -> str:
     return output('git', *cmd)
 
 
-def test_repo(repository: str, revision: str | None, rebase: str | None) -> None:
+def checkout_and_run(repository: str, revision: str | None, rebase: str | None, command: Sequence[str]) -> None:
     run('cat', '/usr/lib/os-release')
     run('cat', '/run/.containerenv')
     run('hostname')
@@ -73,30 +74,42 @@ def test_repo(repository: str, revision: str | None, rebase: str | None) -> None
     else:
         git('log', '-n1')
 
-    for cmd in ('.cockpit-ci/run', 'test/run'):
+    commands: Sequence[Sequence[str]]
+    if command:
+        commands = (command,)
+    else:
+        commands = (
+            ('.cockpit-ci/run',),
+            ('test/run',)
+        )
+
+    for cmd in commands:
         try:
-            log('\n+', shlex.quote(cmd))
-            os.execv(cmd, [cmd])
+            log('\n+', shlex.join(cmd))
+            os.execv(cmd[0], tuple(cmd))
         except FileNotFoundError as exc:
             log(exc)
         except OSError as exc:
             log(exc)
             break
 
-    sys.exit('\n*** Failed to execute testing entry point.')
+    sys.exit('\n*** Failed to execute entry point.')
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('repository', help='The git repository to clone')
-    parser.add_argument('revision', nargs='?', help='The revision to test')
-    parser.add_argument('rebase', nargs='?', help='Target branch to rebase onto')
-    args = parser.parse_args()
-
     # All output to stdout — otherwise podman reorders things
     os.dup2(1, 2)
 
-    test_repo(args.repository, args.revision, args.rebase)
+    log('\n+ [checkout-and-run]', shlex.join(sys.argv[1:]))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--revision', help="The revision to checkout")
+    parser.add_argument('--rebase', help="Target branch to rebase onto")
+    parser.add_argument('repository', help="The git repository to clone")
+    parser.add_argument('command', nargs='*', help="The command to run [default: .cockpit-ci/run]")
+    args = parser.parse_args()
+
+    checkout_and_run(args.repository, args.revision, args.rebase, args.command)
 
 
 if __name__ == '__main__':
