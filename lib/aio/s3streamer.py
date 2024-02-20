@@ -45,8 +45,9 @@ class Destination:
 
 class LocalDestination(Destination):
     def __init__(self, location: str) -> None:
+        logger.debug('LocalDestination(%r)', location)
         self.location = location
-        os.makedirs(self.location)
+        os.makedirs(self.location, exist_ok=True)
 
     def path(self, filename: str) -> str:
         return os.path.join(self.location, filename)
@@ -55,13 +56,13 @@ class LocalDestination(Destination):
         return os.path.exists(self.path(filename))
 
     def write(self, filename: str, data: bytes) -> None:
-        print(f'Write {self.path(filename)}')
+        logger.debug('Write %s', self.path(filename))
         with open(self.path(filename), 'wb+') as file:
             file.write(data)
 
     def delete(self, filenames: Collection[str]) -> None:
         for filename in filenames:
-            print(f'Delete {self.path(filename)}')
+            logger.debug('Delete %s', self.path(filename))
             os.unlink(self.path(filename))
 
 
@@ -99,10 +100,11 @@ class Status:
 
 class LocalStatus(Status):
     def __init__(self, location: str) -> None:
-        print(f'Writing logs to {location}')
+        logger.debug('LocalStatus(%r)', location)
+        self.location = location
 
     def post(self, state: str, description: str) -> None:
-        print(f'Status [{state}] {description}')
+        print(f'Status [{state}] {self.location} "{description}"')
 
 
 class Index(Destination):

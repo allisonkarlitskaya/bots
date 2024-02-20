@@ -20,7 +20,9 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import platform
+import sys
 import tempfile
 import traceback
 from pathlib import Path
@@ -42,6 +44,7 @@ import tomllib
 
 from lib.aio.github import GitHub, GitHubStatus
 from lib.aio.httpqueue import HttpQueue
+from lib.aio.jsonutil import JsonError, JsonObject, get_nested, get_str, get_strv, json_merge_patch
 from lib.aio.s3 import S3Key
 from lib.aio.s3streamer import (
     ChunkedUploader,
@@ -52,41 +55,11 @@ from lib.aio.s3streamer import (
     S3Destination,
     Status,
 )
-from lib.aio.util import JsonObject, JsonValue
 from lib.directories import xdg_config_home
 
 logger = logging.getLogger(__name__)
 
-
-class Config:
-    _config: JsonObject
-
-    def get(self, path: str) -> JsonValue:
-        rest, sep, key = path.rpartition('.')
-        base = self.get_obj(rest) if sep else self._config
-        return base[key]
-
-    def get_obj(self, path: str) -> JsonObject:
-        value = self.get(path)
-        assert isinstance(value, dict)
-        return value
-
-    def get_str(self, path: str) -> str:
-        value = self.get(path)
-        assert isinstance(value, str)
-        return value
-
-    def get_strv(self, path: str) -> Sequence[str]:
-        value = self.get(path)
-        assert isinstance(value, list) and all(isinstance(item, str) for item in value)
-        return tuple(value)
-
-    def __init__(self, config_file: str | None) -> None:
-        if config_file is None:
-            config_file = xdg_config_home('cockpit-dev/job-runner.toml', envvar='JOB_RUNNER_CONFIG')
-
-        with open(config_file, 'rb') as file:
-            self._config = tomllib.load(file)
+BOTS_DIR = Path(__file__).parent
 
 
 class Failure(Exception):
@@ -111,44 +84,94 @@ class Job(NamedTuple):
 
 
 class JobContext:
-    container_cmd: Sequence[str]
-    container_run_args: Sequence[str]
+    config: JsonObject = {}  # immutable
 
-    github: GitHub | None
+    def load_config(self, path: Path | str, name: str, *, missing_ok: bool = False) -> None:
+        logger.debug('Loading %s configuration from %s', name, str(path))
+        try:
+            with open(path, 'rb') as file:
+                self.config = json_merge_patch(self.config, tomllib.load(file))
+        except FileNotFoundError:
+            if missing_ok:
+                logger.debug('No %s configuration found at %s', name, str(path))
+            else:
+                sys.exit(f'No {name} configuration found at {path}')
 
-    def __init__(self, config: Config, session: aiohttp.ClientSession) -> None:
+    def __init__(self, config_file: str | None, session: aiohttp.ClientSession) -> None:
+        # The config is made out of the built-in config...
+        self.load_config(BOTS_DIR / 'job-runner.toml', 'built-in')
+
+        # ... plus exactly one of the following:
+        if config_file:
+            self.load_config(config_file, 'command-line')
+        elif config_file := os.environ.get('JOB_RUNNER_CONFIG'):
+            self.load_config(config_file, '$JOB_RUNNER_CONFIG-specified')
+        else:
+            self.load_config(xdg_config_home('cockpit-dev/job-runner.toml'), 'user', missing_ok=True)
+
         self._session = session
 
-        self.clone_url = 'https://github.com/'
+        try:
+            with get_nested(self.config, 'github') as github:
+                self.clone_url = get_str(github, 'clone')
+                self.github = GitHub(self._session,
+                                     url=get_str(github, 'api'),
+                                     token=get_str(github, 'token'),
+                                     user_agent=get_str(github, 'user-agent'))
 
-        self.container_cmd = (config.get_str('container.command'), *config.get_strv('container.args'))
-        self.container_run_args = config.get_strv('container.run-args')
-        self.default_image = config.get_str('container.default-image')
+            with get_nested(self.config, 'container') as container:
+                self.container_cmd = (get_str(container, 'command'), *get_strv(container, 'args'))
+                self.container_run_args = get_strv(container, 'run-args')
+                self.default_image = get_str(container, 'default-image')
 
-        self.github = GitHub(self._session,
-                             url=config.get_str('status.github.api'),
-                             token=config.get_str('status.github.token'),
-                             user_agent=config.get_str('status.github.user-agent'))
+            with get_nested(self.config, 'logs') as logs:
+                self.logs_driver = get_str(logs, 'driver')
+                match self.logs_driver:
+                    case 's3':
+                        with get_nested(logs, 's3') as s3:
+                            self.s3_url = get_str(s3, 'url')
+                            with get_nested(s3, 'key') as key:
+                                self.s3_key = S3Key(get_str(key, 'access'), get_str(key, 'secret'))
+                            self.s3_acl = get_str(s3, 'acl')
 
-        self.s3_url = config.get_str('logs.s3.url')
-        self.s3_key = S3Key(config.get_str('logs.s3.key.access'), config.get_str('logs.s3.key.secret'))
-        self.s3_acl = config.get_str('logs.s3.acl')
+                    case 'local':
+                        with get_nested(logs, 'local') as local:
+                            self.local_dir = os.path.expanduser(get_str(local, 'dir'))
+                            self.local_link = get_str(local, 'link')
+
+                    case other:
+                        sys.exit(f'Unknown log driver {other}')
+
+            with get_nested(self.config, 'status') as status:
+                self.status_driver = get_str(status, 'driver')
+                if self.status_driver not in ['local', 'github']:
+                    sys.exit(f'Unknown status driver {self.status_driver}')
+
+        except JsonError as exc:
+            sys.exit(f'Configuration error: {exc}')
 
     @contextlib.asynccontextmanager
     async def provide_context(self, job: Job) -> AsyncIterator[tuple[Destination, Status]]:
         destination: Destination
         status: Status
 
-        if self.github:
-            async with HttpQueue(self._session) as queue:
-                slug = job.slug or f'{job.repo}/{job.context}/{job.sha}'
-                destination = S3Destination(queue, self.s3_url + slug + '/', key=self.s3_key, acl=self.s3_acl)
-                status = GitHubStatus(self.github, queue, job.repo, job.sha, job.context, destination.location + 'log.html')
-                yield destination, status
+        slug = job.slug or f'{job.repo}/{job.context}/{job.sha}'
 
-        else:
-            destination = LocalDestination('x/' + (job.slug or f'{job.repo}-{job.sha}-{job.context}'))
-            status = LocalStatus(destination.location)
+        async with HttpQueue(self._session) as queue:
+            match self.logs_driver:
+                case 's3':
+                    destination = S3Destination(queue, self.s3_url + slug + '/', key=self.s3_key, acl=self.s3_acl)
+                    log_url = destination.location + 'log.html'
+                case 'local':
+                    destination = LocalDestination(os.path.join(self.local_dir, slug) + '/')
+                    log_url = self.local_link + slug + '/log.html'
+
+            match self.status_driver:
+                case 'local':
+                    status = LocalStatus(log_url)
+                case 'github':
+                    status = GitHubStatus(self.github, queue, job.repo, job.sha, job.context, log_url)
+
             yield destination, status
 
 
@@ -241,7 +264,7 @@ async def run_container(
             '--env=TEST_ATTACHMENTS=/tmp/attachments',
             job.container or ctx.default_image,
             'python3', '-c',
-            (Path(__file__).parent / 'checkout-and-run').read_text(),  # lulz
+            (BOTS_DIR / 'checkout-and-run').read_text(),  # lulz
             ctx.clone_url + job.repo,
             *((job.sha,) if job.sha else ()),
             *((job.target,) if job.target else ()),
@@ -337,6 +360,7 @@ class KeyValueAction(argparse.Action):
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true', help="Enable debugging output")
     parser.add_argument('--config-file', '-F', metavar='FILENAME',
                         help="Config file [default JOB_RUNNER_CONFIG or ~/.config/cockpit-dev/job-runner.toml]")
     subprograms = parser.add_subparsers(dest='cmd', required=True, title="Subcommands")
@@ -357,7 +381,10 @@ async def main() -> None:
 
     args = parser.parse_args()
 
-    config = Config(args.config_file)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
     if args.cmd == 'run':
         job = Job(**{field: getattr(args, field) for field in Job._fields})
@@ -365,10 +392,8 @@ async def main() -> None:
     elif args.cmd == 'json':
         job = Job(**json.loads(args.json))
 
-    logging.basicConfig(level=logging.DEBUG)
-
     async with aiohttp.ClientSession() as session:
-        ctx = JobContext(config, session)
+        ctx = JobContext(args.config_file, session)
         await run_job(job, ctx)
 
 if __name__ == '__main__':
