@@ -380,7 +380,7 @@ async def run_job(job: Job, ctx: JobContext) -> None:
 
 
 class KeyValueAction(argparse.Action):
-    def __init__(self, option_strings: str, dest: str, **kwargs) -> None:
+    def __init__(self, option_strings: str, dest: str, **kwargs: Any) -> None:
         super().__init__(option_strings, dest, **kwargs, default={})
 
     def __call__(
