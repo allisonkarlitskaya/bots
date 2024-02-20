@@ -92,6 +92,7 @@ class Job:
 
         # to run
         self.container = get_str_or_none(obj, 'container', None)
+        self.secrets = get_strv(obj, 'secrets', ())
         self.command = get_strv(obj, 'command', None)
         self.env = get_str_map(obj, 'env')
         self.timeout = get_int(obj, 'timeout', 120)
@@ -129,6 +130,7 @@ class JobContext:
             with get_nested(self.config, 'container') as container:
                 self.container_cmd = (get_str(container, 'command'), *get_strv(container, 'args'))
                 self.container_run_args = get_strv(container, 'run-args')
+                self.secrets_args = get_str_map(container, 'secrets', {})
                 self.default_image = get_str(container, 'default-image')
 
             with get_nested(self.config, 'logs') as logs:
@@ -282,6 +284,7 @@ async def run_container(
             '--interactive',
             *(f'--env={k}={v}' for k, v in job.env.items()),
             '--env=TEST_ATTACHMENTS=/tmp/attachments',
+            *(arg for name, arg in ctx.secrets_args.items() if name in job.secrets),
             job.container or ctx.default_image,
             'python3', '-c',
             (BOTS_DIR / 'checkout-and-run').read_text(),  # lulz
@@ -416,6 +419,7 @@ async def main() -> None:
     run_parser.add_argument('--container', help="The container image to use (like `quay.io/cockpit/tasks:latest`)")
     run_parser.add_argument('--env', help="Environment variables for the test run", action=KeyValueAction)
     run_parser.add_argument('--timeout', type=int, help="Timeout of the job, in minutes", default=120)
+    run_parser.add_argument('--secret', dest='secrets', action='append', help="Provide the named secret")
     run_parser.add_argument('command', nargs='*', help="Command to run [default: .cockpit-ci/run]")
 
     run_parser = subprograms.add_parser("json", help="Run a single given as a JSON blob")

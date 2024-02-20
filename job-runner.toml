@@ -26,4 +26,5 @@ link = 'http://127.0.0.1:8000/'
 command = 'podman'
 args = []
 run-args = ['--device=/dev/kvm']
+# secrets.github = '--secret=github-token'
 default-image = 'quay.io/cockpit/tasks:latest'
