@@ -87,7 +87,7 @@ def get_dict(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | J
 
 def get_str_map(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | Mapping[str, str]:
     def as_str_map(value: JsonValue) -> Mapping[str, str]:
-        return {key: typechecked(value, str) for key, value in typechecked(value, dict)}
+        return {key: typechecked(value, str) for key, value in typechecked(value, dict).items()}
     return _get(obj, as_str_map, key, default)
 
 
@@ -103,7 +103,7 @@ def get_nested(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> Iter
         yield get_dict(obj, key, default)
     except KeyError:
         if default is not _empty:
-            return default
+            yield default
         raise JsonError(obj, f"attribute '{key}' required") from None
     except JsonError as exc:
         target = f"attribute '{key}'" + (' elements:' if exc.value is not obj[key] else ':')
