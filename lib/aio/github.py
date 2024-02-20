@@ -18,7 +18,6 @@ from typing import Callable, Generic, Mapping, NamedTuple
 
 import aiohttp
 
-from .httpqueue import HttpQueue
 from .s3streamer import Status
 from .util import JsonValue, LRUCache, T
 
@@ -45,9 +44,10 @@ class GitHub:
     def qualify(self, resource: str) -> str:
         return self.url + resource
 
-    def post(self, queue: HttpQueue, resource: str, body: JsonValue = None) -> None:
+    async def post(self, resource: str, body: JsonValue = None) -> None:
         logger.debug('posting to %r', resource)
-        queue.post(self.qualify(resource), body=body, headers=self.headers)
+        async with self.session.post(self.qualify(resource), json=body, headers=self.headers) as response:
+            logger.debug('response %r', response)
 
     async def get(self, resource: str, reducer: Callable[[object], T]) -> T | None:
         cache_key = (resource, reducer)
@@ -78,13 +78,12 @@ class GitHub:
 
 
 class GitHubStatus(Status):
-    def __init__(self, api: GitHub, queue: HttpQueue, repo: str, revision: str, context: str, link: str) -> None:
+    def __init__(self, api: GitHub, repo: str, revision: str, context: str, link: str) -> None:
         logger.debug('GitHub repo %s context %s link %s', repo, context, link)
         self.api = api
-        self.queue = queue
         self.status = {'context': context, 'target_url': link}
         self.resource = f'repos/{repo}/statuses/{revision}'
 
-    def post(self, state: str, description: str) -> None:
+    async def post(self, state: str, description: str) -> None:
         logger.debug('POST statuses/%s %s %s', self.resource, state, description)
-        self.api.post(self.queue, self.resource, dict(self.status, state=state, description=description))
+        await self.api.post(self.resource, dict(self.status, state=state, description=description))

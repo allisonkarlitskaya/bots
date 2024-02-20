@@ -187,7 +187,7 @@ class JobContext:
                 case 'local':
                     status = LocalStatus(log_url)
                 case 'github':
-                    status = GitHubStatus(self.github, queue, job.repo, job.sha, job.context, log_url)
+                    status = GitHubStatus(self.github, job.repo, job.sha, job.context, log_url)
 
             yield destination, status
 
@@ -327,7 +327,7 @@ async def run_job(job: Job, ctx: JobContext) -> None:
         try:
             title = job.title or f'{job.context}@{job.repo}#{job.sha}'
             log.start(title + '\n\nJob(' + json.dumps(job.__dict__, indent=4) + ')\n')
-            status.post('pending', f'Testing in progress [{platform.node()}]')
+            await status.post('pending', f'Testing in progress [{platform.node()}]')
 
             tasks = {run_container(job, ctx, log.write, index)}
 
@@ -341,22 +341,22 @@ async def run_job(job: Job, ctx: JobContext) -> None:
 
         except Failure as exc:
             log.write(f'\n*** Failure: {exc}\n'.encode())
-            status.post('failure', str(exc))
+            await status.post('failure', str(exc))
 
         except asyncio.CancelledError:
-            status.post('failure', f'Cancelled [{platform.node()}]')
+            await status.post('failure', f'Cancelled [{platform.node()}]')
             log.write('*** Job cancelled\n'.encode())
             raise
 
         except BaseException as exc:
             # ie: bug in this program, but let's be helpful
-            status.post('failure', f'Internal error [{platform.node()}]')
+            await status.post('failure', f'Internal error [{platform.node()}]')
             message = '\n\n' + '\n'.join(traceback.format_exception(exc)) + '\n'
             log.write(message.encode())
             raise
 
         else:
-            status.post('success', 'Job successful')
+            await status.post('success', 'Job successful')
             log.write('\n\nJob ran successfully.  :)\n'.encode())
 
         finally:

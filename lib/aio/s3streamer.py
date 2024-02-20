@@ -94,7 +94,7 @@ class S3Destination(Destination):
 
 
 class Status:
-    def post(self, state: str, description: str) -> None:
+    async def post(self, state: str, description: str) -> None:
         raise NotImplementedError
 
 
@@ -103,7 +103,7 @@ class LocalStatus(Status):
         logger.debug('LocalStatus(%r)', location)
         self.location = location
 
-    def post(self, state: str, description: str) -> None:
+    async def post(self, state: str, description: str) -> None:
         logger.info('Status [%s] %s %r', state, self.location, description)
 
 
