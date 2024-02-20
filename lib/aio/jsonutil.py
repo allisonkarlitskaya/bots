@@ -65,12 +65,26 @@ def _get(obj: JsonObject, cast: Callable[[JsonValue], T], key: str, default: DT 
         raise JsonError(obj, f"{target} {exc!s}") from exc
 
 
+def get_int(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | int:
+    return _get(obj, lambda v: typechecked(v, int), key, default)
+
+
 def get_str(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | str:
     return _get(obj, lambda v: typechecked(v, str), key, default)
 
 
+def get_str_or_none(obj: JsonObject, key: str, default: str | None) -> str | None:
+    return _get(obj, lambda v: None if v is None else typechecked(v, str), key, default)
+
+
 def get_dict(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | JsonObject:
     return _get(obj, lambda v: typechecked(v, dict), key, default)
+
+
+def get_str_map(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | Mapping[str, str]:
+    def as_str_map(value: JsonValue) -> Mapping[str, str]:
+        return {key: typechecked(value, str) for key, value in typechecked(value, dict)}
+    return _get(obj, as_str_map, key, default)
 
 
 def get_strv(obj: JsonObject, key: str, default: DT | _Empty = _empty) -> DT | Sequence[str]:

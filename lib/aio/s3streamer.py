@@ -104,7 +104,7 @@ class LocalStatus(Status):
         self.location = location
 
     def post(self, state: str, description: str) -> None:
-        print(f'Status [{state}] {self.location} "{description}"')
+        logger.info('Status [%s] %s %r', state, self.location, description)
 
 
 class Index(Destination):

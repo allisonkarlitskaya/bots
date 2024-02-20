@@ -33,8 +33,6 @@ from typing import (
     Collection,
     Coroutine,
     Iterable,
-    Mapping,
-    NamedTuple,
     Never,
     Sequence,
 )
@@ -44,7 +42,18 @@ import tomllib
 
 from lib.aio.github import GitHub, GitHubStatus
 from lib.aio.httpqueue import HttpQueue
-from lib.aio.jsonutil import JsonError, JsonObject, get_nested, get_str, get_strv, json_merge_patch
+from lib.aio.jsonutil import (
+    JsonError,
+    JsonObject,
+    get_int,
+    get_nested,
+    get_str,
+    get_str_map,
+    get_str_or_none,
+    get_strv,
+    json_merge_patch,
+    typechecked,
+)
 from lib.aio.s3 import S3Key
 from lib.aio.s3streamer import (
     ChunkedUploader,
@@ -66,21 +75,22 @@ class Failure(Exception):
     pass
 
 
-class Job(NamedTuple):
-    # to checkout and post status
-    repo: str
-    sha: str
-    context: str
-    target: str | None = None
+class Job:
+    def __init__(self, obj: JsonObject) -> None:
+        # to checkout and post status
+        self.repo = get_str(obj, 'repo')
+        self.sha = get_str(obj, 'sha')
+        self.context = get_str(obj, 'context')
+        self.target = get_str_or_none(obj, 'target', None)
 
-    # reporting
-    slug: str | None = None
-    title: str | None = None
+        # reporting
+        self.slug = get_str_or_none(obj, 'slug', None)
+        self.title = get_str_or_none(obj, 'title', None)
 
-    # to run
-    container: str | None = None
-    env: Mapping[str, str] = {}
-    timeout: int = 120  # minutes
+        # to run
+        self.container = get_str_or_none(obj, 'container', None)
+        self.env = get_str_map(obj, 'env')
+        self.timeout = get_int(obj, 'timeout', 120)
 
 
 class JobContext:
@@ -112,13 +122,6 @@ class JobContext:
         self._session = session
 
         try:
-            with get_nested(self.config, 'github') as github:
-                self.clone_url = get_str(github, 'clone')
-                self.github = GitHub(self._session,
-                                     url=get_str(github, 'api'),
-                                     token=get_str(github, 'token'),
-                                     user_agent=get_str(github, 'user-agent'))
-
             with get_nested(self.config, 'container') as container:
                 self.container_cmd = (get_str(container, 'command'), *get_strv(container, 'args'))
                 self.container_run_args = get_strv(container, 'run-args')
@@ -146,6 +149,19 @@ class JobContext:
                 self.status_driver = get_str(status, 'driver')
                 if self.status_driver not in ['local', 'github']:
                     sys.exit(f'Unknown status driver {self.status_driver}')
+
+            with get_nested(self.config, 'github') as github:
+                self.clone_url = get_str(github, 'clone')
+                # only strictly require the token if reporting statuses
+                if self.status_driver == 'github':
+                    token = get_str(github, 'token')
+                else:
+                    token = get_str(github, 'token', '')
+
+                self.github = GitHub(self._session,
+                                     url=get_str(github, 'api'),
+                                     token=token,
+                                     user_agent=get_str(github, 'user-agent'))
 
         except JsonError as exc:
             sys.exit(f'Configuration error: {exc}')
@@ -302,7 +318,7 @@ async def run_job(job: Job, ctx: JobContext) -> None:
 
         try:
             title = job.title or f'{job.context}@{job.repo}#{job.sha}'
-            log.start(title + '\n\nJob(' + json.dumps(job._asdict(), indent=4) + ')\n')
+            log.start(title + '\n\nJob(' + json.dumps(job.__dict__, indent=4) + ')\n')
             status.post('pending', f'Testing in progress [{platform.node()}]')
 
             tasks = {run_container(job, ctx, log.write, index)}
@@ -374,7 +390,7 @@ async def main() -> None:
     run_parser.add_argument('--title', help="The title for the log page")
     run_parser.add_argument('--container', help="The container image to use (like `quay.io/cockpit/tasks:latest`)")
     run_parser.add_argument('--env', help="Environment variables for the test run", action=KeyValueAction)
-    run_parser.add_argument('--timeout', help="Timeout of the job, in minutes")
+    run_parser.add_argument('--timeout', type=int, help="Timeout of the job, in minutes", default=120)
 
     run_parser = subprograms.add_parser("json", help="Run a single given as a JSON blob")
     run_parser.add_argument('json', help="The job, in JSON format")
@@ -387,10 +403,14 @@ async def main() -> None:
         logging.basicConfig(level=logging.INFO)
 
     if args.cmd == 'run':
-        job = Job(**{field: getattr(args, field) for field in Job._fields})
+        # if this throws, it's an error in the parser setup, above
+        job = Job(vars(args))
 
     elif args.cmd == 'json':
-        job = Job(**json.loads(args.json))
+        try:
+            job = Job(typechecked(json.loads(args.json), dict))
+        except (JsonError, json.JSONDecodeError) as exc:
+            sys.exit(f'Poorly formed job: {exc}')
 
     async with aiohttp.ClientSession() as session:
         ctx = JobContext(args.config_file, session)

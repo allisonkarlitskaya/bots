@@ -53,7 +53,7 @@ class HttpQueue:
 
             logger.log(self._level, '%s %s', request.method, request.url)
             async with self.session.request(request.method, request.url, data=request.data, headers=headers) as resp:
-                logger.info('response %r', resp)
+                logger.debug('response %r', resp)
             await asyncio.sleep(1.0)
             self._queue.done(request)
 

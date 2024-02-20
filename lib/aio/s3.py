@@ -17,7 +17,6 @@ import hashlib
 import hmac
 import logging
 import os
-import sys
 import time
 import urllib.parse
 from typing import Mapping, NamedTuple
@@ -42,7 +41,7 @@ def get_key(hostname: str) -> S3Key | None:
                 access, secret = fp.read().split()
                 return S3Key(access, secret)
         except ValueError:
-            print(f'ignoring invalid content of {s3_key_dir}/{hostname}', file=sys.stderr)
+            logger.warning('ignoring invalid content of %r', f'{s3_key_dir}/{hostname}')
         except FileNotFoundError:
             pass
         _, _, hostname = hostname.partition('.')  # strip a leading component
