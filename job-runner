@@ -280,7 +280,7 @@ async def run_container(
             *ctx.container_run_args,
             f'--cidfile={cidfile}',
             '--interactive',
-            *((f'--env={k}={v}' for k, v in job.env.items()) if job.env else ()),
+            *(f'--env={k}={v}' for k, v in job.env.items()),
             '--env=TEST_ATTACHMENTS=/tmp/attachments',
             job.container or ctx.default_image,
             'python3', '-c',
