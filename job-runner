@@ -265,7 +265,7 @@ async def run(args: Sequence[str], **kwargs: Any) -> None:
 
 
 async def run_container(
-    job: Job, ctx: JobContext, log: Callable[[bytes], None], index: Index,
+    job: Job, ctx: JobContext, log: Callable[[bytes], None], index: Index, link: str
 ) -> None:
     with tempfile.TemporaryDirectory() as tmpdir_path:
         tmpdir = Path(tmpdir_path)
@@ -279,6 +279,7 @@ async def run_container(
             '--interactive',
             *(f'--env={k}={v}' for k, v in job.env.items()),
             '--env=TEST_ATTACHMENTS=/tmp/attachments',
+            f'--env=COCKPIT_CI_LOG_URL={link}',
             *(arg for name, arg in ctx.secrets_args.items() if name in job.secrets),
             job.container or ctx.default_image,
             'python3', '-c',
@@ -330,7 +331,7 @@ async def run_job(job: Job, ctx: JobContext) -> None:
             log.start(title + '\n\nJob(' + json.dumps(job.__dict__, indent=4) + ')\n')
             await status.post('pending', f'Testing in progress [{platform.node()}]')
 
-            tasks = {run_container(job, ctx, log.write, index)}
+            tasks = {run_container(job, ctx, log.write, index, status.link)}
 
             if job.timeout:
                 tasks.add(timeout_minutes(job.timeout))
@@ -350,7 +351,7 @@ async def run_job(job: Job, ctx: JobContext) -> None:
                     "body": textwrap.dedent(f"""
                         The job {job.context} failed on commit {job.sha}.
 
-                        Log: {destination.location}log.html
+                        Log: {status.link}
                     """).lstrip(),
                     "labels": ["nightly"]
                 }

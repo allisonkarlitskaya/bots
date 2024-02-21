@@ -81,9 +81,12 @@ class GitHubStatus(Status):
     def __init__(self, api: GitHub, repo: str, revision: str, context: str, link: str) -> None:
         logger.debug('GitHub repo %s context %s link %s', repo, context, link)
         self.api = api
-        self.status = {'context': context, 'target_url': link}
         self.resource = f'repos/{repo}/statuses/{revision}'
+        self.link = link
+        self.context = context
 
     async def post(self, state: str, description: str) -> None:
         logger.debug('POST statuses/%s %s %s', self.resource, state, description)
-        await self.api.post(self.resource, dict(self.status, state=state, description=description))
+        await self.api.post(self.resource, {
+            'context': self.context, 'state': state, 'description': description, 'target_url': self.link
+        })
