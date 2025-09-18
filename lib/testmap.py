@@ -415,3 +415,8 @@ def tests_for_po_refresh(project: str) -> Sequence[str]:
         # plus required f-coreos
         contexts.append("fedora-coreos/other")
     return contexts
+
+
+if __name__ == '__main__':
+    import json
+    print(json.dumps(REPO_BRANCH_CONTEXT, indent=4))

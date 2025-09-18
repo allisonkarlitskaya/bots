@@ -53,6 +53,7 @@ class Status:
 
 
 class Forge:
+    name: str
     clone: URL
 
     async def resolve_subject(self, spec: SubjectSpecification) -> Subject:
@@ -64,10 +65,19 @@ class Forge:
     def get_status(self, repo: str, sha: str, context: str | None, location: URL) -> Status:
         raise NotImplementedError
 
+    async def get_statuses(self, repo: str, sha: str) -> JsonObject:
+        raise NotImplementedError
+
     async def open_issue(self, repo: str, issue: JsonObject) -> None:
         raise NotImplementedError
 
     async def read_file(self, subject: Subject, filename: str) -> str | None:
+        raise NotImplementedError
+
+    async def get_branches(self, repo: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    async def get_pulls(self, repo: str) -> dict[int, tuple[str, str]]:
         raise NotImplementedError
 
     @classmethod

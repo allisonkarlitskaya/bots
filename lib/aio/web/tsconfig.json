@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+        "erasableSyntaxOnly": true,
+        "lib": ["ESNext", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "noEmit": true,
+        "strict": true,
+        "target": "ESNext",
+        "verbatimModuleSyntax": true,
+    }
+}

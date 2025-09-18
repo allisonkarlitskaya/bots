@@ -1,0 +1,8 @@
+[build]
+builder = 'DOCKERFILE'
+dockerfilePath = 'container/webhook/Containerfile'
+
+[healthcheck]
+path = '/health'
+timeout = 5
+interval = 10

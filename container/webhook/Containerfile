@@ -1,0 +1,17 @@
+FROM docker.io/node:lts-alpine AS esbuild
+WORKDIR /build
+RUN npm install --no-save esbuild
+COPY lib/aio/web/ .
+RUN npx esbuild ci.ts --outfile=ci.js
+
+FROM docker.io/python:3.14
+WORKDIR /app
+COPY container/webhook/requirements.txt .
+RUN pip install --disable-pip-version-check -r requirements.txt
+COPY lib/ lib/
+COPY --from=esbuild /build/ci.js lib/aio/web/ci.js
+COPY job-runner.toml .
+COPY container/webhook/job-runner.override.toml .
+ENV JOB_RUNNER_CONFIG=/app/job-runner.override.toml
+ENV PORT=8000
+CMD uvicorn --host 0.0.0.0 --port "$PORT" lib.aio.webhook:app

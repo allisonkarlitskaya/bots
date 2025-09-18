@@ -33,7 +33,7 @@ from .jsonutil import (
     get_str,
     get_strv,
     json_merge_patch,
-    load_external_files,
+    load_external_refs,
     typechecked,
 )
 from .local import LocalLogDriver
@@ -52,7 +52,7 @@ LOG_DRIVERS: Mapping[str, Callable[[JsonObject], AsyncContextManager[LogDriver]]
 }
 
 
-class JobContext(contextlib.AsyncExitStack):
+class JobContext(contextlib.AsyncExitStack, AsyncContextManager["JobContext"]):
     config: JsonObject = {}  # noqa:RUF012  # JsonObject is immutable
     logs: LogDriver
     _forges: dict[str, Forge]
@@ -74,8 +74,8 @@ class JobContext(contextlib.AsyncExitStack):
         except OSError as exc:
             sys.exit(f'{path}: {exc}')
 
-        # load_external_files() can throw so make sure it's outside of the above block
-        self.config = json_merge_patch(self.config, load_external_files(content, path.parent))
+        # load_external_refs() can throw so make sure it's outside of the above block
+        self.config = json_merge_patch(self.config, load_external_refs(content, path.parent))
 
     def __init__(self, config_file: Path | str | None, *, debug: bool = False) -> None:
         super().__init__()

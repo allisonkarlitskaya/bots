@@ -1,0 +1,11 @@
+# Overlay for container deployment
+
+[forge.github]
+token = [{env="GITHUB_TOKEN"}]
+webhook-secret = [{env="GITHUB_WEBHOOK_SECRET"}]
+
+[forge.codeberg]
+webhook-secret = [{env="CODEBERG_WEBHOOK_SECRET"}]
+
+[webhook.workers]
+registration-secret = [{env="WORKER_REGISTRATION_SECRET"}]

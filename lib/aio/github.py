@@ -46,7 +46,7 @@ async def retry(func: Callable[[], Awaitable[T]]) -> T:
             pass
 
         # 1 → 2 → 4 → 8s delay
-        await asyncio.sleep(2 ** attempt)
+        await asyncio.sleep(2**attempt)
 
     # ...last attempt.
     return await func()
@@ -66,6 +66,7 @@ class GitHub(Forge, contextlib.AsyncExitStack):
         self.clone = URL(get_str(config, 'clone-url'))
         self.api = URL(get_str(config, 'api-url'))
         self.dry_run = not get_bool(config, 'post')
+        self._limit_info_notify: Callable[[JsonObject], None] | None = None
 
     async def __aenter__(self) -> Self:
         headers = {}
@@ -111,6 +112,12 @@ class GitHub(Forge, contextlib.AsyncExitStack):
 
             logger.debug('get %r %r %r', resource, parameters, cache_entry)
             response = await self.session.get(str(url), headers=headers)
+            if self._limit_info_notify:
+                self._limit_info_notify({
+                    key.lower().removeprefix('x-ratelimit-'): value
+                    for (key, value) in response.headers.items()
+                    if key.lower().startswith('x-ratelimit-')
+                })
 
             condition_map = {'etag': 'if-none-match', 'last-modified': 'if-modified-since'}
             conditions = {c: response.headers[h] for h, c in condition_map.items() if h in response.headers}
@@ -130,6 +137,19 @@ class GitHub(Forge, contextlib.AsyncExitStack):
 
     async def get_obj(self, resource: str, parameters: Mapping[str, str] | None = None) -> JsonObject:
         return typechecked(await self.get(resource, parameters), dict)
+
+    async def get_statuses(self, repo: str, sha: str) -> Mapping[str, JsonObject]:
+        result = await self.get_obj(f'repos/{repo}/commits/{sha}/status')
+        # TODO: pagination...
+        contexts = dict[str, JsonObject]()
+        # Forgejo returns null instead of [] when there are no statuses
+        statuses = result.get('statuses')
+        if isinstance(statuses, list):
+            for item in statuses:
+                item = typechecked(item, dict)
+                if item.get('creator') is None or 1:  # TODO: Forgejo does this but GitHub not...
+                    contexts[get_str(item, "context")] = item
+        return contexts
 
     async def check_pr_changed(self, repo: str, pull_nr: int, expected_sha: str) -> str | None:
         try:
@@ -176,10 +196,13 @@ class GitHub(Forge, contextlib.AsyncExitStack):
     async def resolve_subject(self, spec: SubjectSpecification) -> Subject:
         if spec.pull is not None:
             pull = await self.get_obj(f'repos/{spec.repo}/pulls/{spec.pull}')
-            return Subject(self, spec.repo,
-                           # mypy needs some help here.  See https://github.com/python/mypy/issues/16659
-                           spec.sha if spec.sha else get_str(get_dict(pull, 'head'), 'sha'),
-                           spec.target or get_str(get_dict(pull, 'base'), 'ref'))
+            return Subject(
+                self,
+                spec.repo,
+                # mypy needs some help here.  See https://github.com/python/mypy/issues/16659
+                spec.sha if spec.sha else get_str(get_dict(pull, 'head'), 'sha'),
+                spec.target or get_str(get_dict(pull, 'base'), 'ref'),
+            )
 
         elif spec.sha is not None:
             return Subject(self, spec.repo, spec.sha, spec.target)
@@ -203,9 +226,12 @@ class GitHubStatus(Status):
     async def post(self, state: str, description: str) -> None:
         logger.debug('POST statuses/%s %s %s', self.resource, state, description)
         if self.context is not None:
-            await self.api.post(self.resource, {
-                'context': self.context,
-                'state': state,
-                'description': f'{description} [{platform.node()}]',
-                'target_url': self.link
-            })
+            await self.api.post(
+                self.resource,
+                {
+                    'context': self.context,
+                    'state': state,
+                    'description': f'{description} [{platform.node()}]',
+                    'target_url': self.link,
+                },
+            )

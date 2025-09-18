@@ -1,0 +1,2 @@
+# `railway up` doesn't like broken symlinks
+/images/

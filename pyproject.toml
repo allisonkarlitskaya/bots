@@ -3,7 +3,7 @@ name = "bots"
 requires-python = ">= 3.14"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 strict = true
 follow_imports = 'silent'  # https://github.com/python-lsp/pylsp-mypy/issues/81
 scripts_are_modules = true  # allow checking all scripts in one invocation
@@ -37,6 +37,10 @@ module = [
     'po-refresh',
     'tasks-container-update',
 ]
+
+[tool.pyright]
+pythonVersion = "3.14"
+enableExperimentalFeatures = true
 
 [tool.ruff]
 exclude = [
