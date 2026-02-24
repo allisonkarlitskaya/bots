@@ -16,6 +16,7 @@ from lib.aio.git import get_git_upstream
 from lib.aio.jobcontext import JobContext
 from lib.aio.jsonutil import JsonObject, get_dict, get_str, typechecked
 from lib.directories import xdg_config_home
+from lib.jobqueue import JobSpecification
 
 # Testing Farm API endpoint
 TF_API_URL = 'https://api.dev.testing-farm.io/v0.1'
@@ -74,7 +75,7 @@ class TestingFarmClient(contextlib.AsyncExitStack):
     async def submit_job(
         self,
         ctx: JobContext,
-        job: JsonObject,
+        job: JobSpecification | JsonObject,  # TODO: PEP 728
         *,
         git_url_ref: tuple[str, str] | None = None,
         compose: str = 'Fedora-Rawhide',

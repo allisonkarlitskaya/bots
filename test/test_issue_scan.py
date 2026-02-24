@@ -240,6 +240,57 @@ class TestIssueScan(unittest.TestCase):
             "",
         )
 
+    def test_scan_comment(self) -> None:
+        """Test /image-refresh command in a comment."""
+        self.run_success_json(
+            [
+                "--issues-data",
+                json.dumps({
+                    "issue": GITHUB_DATA['/repos/cockpit-project/bots/issues/2'],
+                    "comment": {
+                        "body": "/image-refresh foonux",
+                        "user": {"login": "cockpit-project"},
+                    },
+                    "repository": {"full_name": "cockpit-project/bots"},
+                }),
+            ],
+            EXPECTED_JOB_ISSUE_2,
+        )
+
+    def test_scan_comment_user_not_in_allowlist(self) -> None:
+        """Comment from user not in allowlist - should be ignored."""
+        self.run_success(
+            [
+                "--issues-data",
+                json.dumps({
+                    "issue": GITHUB_DATA['/repos/cockpit-project/bots/issues/2'],
+                    "comment": {
+                        "body": "/image-refresh foonux",
+                        "user": {"login": "randomuser"},
+                    },
+                    "repository": {"full_name": "cockpit-project/bots"},
+                }),
+            ],
+            "",
+        )
+
+    def test_scan_comment_not_image_refresh(self) -> None:
+        """Comment without /image-refresh command - should be ignored."""
+        self.run_success(
+            [
+                "--issues-data",
+                json.dumps({
+                    "issue": GITHUB_DATA['/repos/cockpit-project/bots/issues/2'],
+                    "comment": {
+                        "body": "just a regular comment",
+                        "user": {"login": "cockpit-project"},
+                    },
+                    "repository": {"full_name": "cockpit-project/bots"},
+                }),
+            ],
+            "",
+        )
+
     # this represents what actually happens in production
     @unittest.mock.patch("lib.distributed_queue.DistributedQueue")
     def test_scan_clidata_amqp(self, mock_queue: unittest.mock.MagicMock) -> None:
