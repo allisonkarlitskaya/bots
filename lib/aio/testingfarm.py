@@ -12,10 +12,11 @@ from typing import Self
 
 import httpx
 
-from lib.aio.git import get_git_upstream
+from lib.aio import git
 from lib.aio.jobcontext import JobContext
 from lib.aio.jsonutil import JsonObject, get_dict, get_str, typechecked
 from lib.directories import xdg_config_home
+from lib.jobqueue import JobSpecification
 
 # Testing Farm API endpoint
 TF_API_URL = 'https://api.dev.testing-farm.io/v0.1'
@@ -74,7 +75,7 @@ class TestingFarmClient(contextlib.AsyncExitStack):
     async def submit_job(
         self,
         ctx: JobContext,
-        job: JsonObject,
+        job: JobSpecification | JsonObject,  # TODO: PEP 728
         *,
         git_url_ref: tuple[str, str] | None = None,
         compose: str = 'Fedora-Rawhide',
@@ -91,7 +92,7 @@ class TestingFarmClient(contextlib.AsyncExitStack):
             Testing Farm request ID
         """
         if git_url_ref is None:
-            git_url_ref = await get_git_upstream()
+            git_url_ref = await git.get_git_upstream()
 
         git_url, git_ref = git_url_ref
         config_json = json.dumps(ctx.serialize())

@@ -98,6 +98,19 @@ class GitHub(Forge, contextlib.AsyncExitStack):
 
         return await retry(post_once)
 
+    async def patch(self, resource: str, body: JsonValue = None) -> JsonValue:
+        if self.dry_run:
+            logger.info('** Would patch %s: %s', resource, json.dumps(body, indent=4))
+            return body
+
+        async def patch_once() -> JsonValue:
+            response = await self.session.patch(str(self.api / resource), json=body)
+            response.raise_for_status()
+            logger.debug('response %r', response)
+            return response.json()
+
+        return await retry(patch_once)
+
     async def get(self, resource: str, parameters: Mapping[str, str] | None = None) -> JsonValue:
         async def get_once() -> JsonValue:
             headers = dict(self.session.headers)
